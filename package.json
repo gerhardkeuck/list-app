@@ -1,0 +1,27 @@
+{
+  "name": "list-app",
+  "version": "1.0.0",
+  "description": "List app that allow items to be added while offline",
+  "main": "index.js",
+  "scripts": {
+    "start": "gulp && concurrently --kill-others \"gulp watch\" \"node server.js\""
+  },
+  "keywords": [
+    "list",
+    "app",
+    "offline"
+  ],
+  "author": "Gerhard Keuck",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "express": "^4.16.4",
+    "fs": "0.0.1-security"
+  },
+  "devDependencies": {
+    "concurrently": "^4.0.1",
+    "copyfiles": "^2.1.0",
+    "del": "^3.0.0",
+    "gulp": "^4.0.0"
+  }
+}
