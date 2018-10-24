@@ -1,163 +1,135 @@
+<style>
+	* {
+		font-family: sans-serif;
+		font-weight: normal;
+	}
+
+	body {
+		padding: 8px;
+		background: #e2e1e0;
+		margin: 8px;
+	}
+
+	p {
+		margin: 0;
+	}
+
+	ul {
+		list-style: none;
+	}
+
+	.list-child {
+		padding: 4px;
+		margin: 0;
+		border-radius: 8px;
+		border-color: cornflowerblue;
+		border-width: 2px;
+		border-style: solid;
+		display: flex;
+		justify-content: space-between;
+		word-break: break-all;
+		align-items: center;
+	}
+
+	.items-container .list-child:not(:first-child) {
+		margin-top: 8px;
+	}
+
+	.items-container {
+		/*width: 100%;*/
+		max-width: 400px;
+		padding: 8px;
+		background: white;
+		margin: 8px 8px 32px 0;
+		border-radius: 8px;
+		border-style: solid;
+		border-width: 4px;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 6px 26px rgba(0, 0, 0, 0.25), 0 10px 10px rgba(0, 0, 0, 0.22)
+	}
+
+	.online-version {
+		border-color: yellowgreen;
+
+	}
+
+	.offline-version {
+		border-color: orange;
+	}
+
+	#temp-list-root.temp {
+		border-style: dashed;
+	}
+
+	.temp {
+		border-color: lightgray;
+
+	}
+
+	input {
+		border-radius: 8px;
+		border: none;
+		padding: 3px;
+		padding-left: 8px;
+	}
+	.delete-button {
+		border-radius: 21px;
+		background-color: #eee;
+		border: none;
+		width: 20px;
+		margin-left: 4px;
+		height: 20px;
+		user-select: none;
+		outline: none;
+	}
+
+	button.delete-button:hover {
+		background-color: lightgray;
+	}
+
+	.input-container {
+		width: 100%;
+		max-width: 400px;
+		margin: 8px 8px 16px 0;
+	}
+
+	.input-container button {
+		margin: 4px 2px;
+		background: #ef456a;
+		border: none;
+		border-radius: 4px;
+		color: white;
+		padding: 2px 10px;
+		height: 22px;
+	}
+</style>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 	<title>Title</title>
-	<style>
-		body {
-			width: 100%;
-			max-width: 400px;
-			margin: 0;
-			padding: 8px;
-		}
-
-		p {
-			margin: 0;
-		}
-
-		ul {
-			list-style: none;
-		}
-
-		.list-child {
-			padding: 4px;
-			margin: 8px 8px 0;
-			border-radius: 8px;
-			border-color: cornflowerblue;
-			border-width: 2px;
-			border-style: solid;
-			display: flex;
-			justify-content: space-between;
-		}
-
-		.list-child.temp {
-			border-color: dimgray;
-		}
-	</style>
 	<script
 			src="https://code.jquery.com/jquery-3.3.1.min.js"
 			integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
-			crossorigin="anonymous"></script>
+	crossorigin="anonymous"></script>
 </head>
 <body>
-<p>Connection state: <span id="server-status">Unknown</span></p>
-<br>
-<label>
-	<input id="item-item-text" type="text">
-</label>
-<button onclick="addItem()">Add item</button>
-<button onclick="addTempItem()">Add temp</button>
-<div id="list-root"></div>
-<img id="hidden-image-for-state" alt="" style="display: none">
-<script>
-	var currentId = 5;
-
-	function addItem() {
-		// const node = document.getElementById('list-root');
-		// const element = document.createElement('li');
-		// node.appendChild(element)
-		const item = createItemForId(currentId);
-		currentId++;
-		console.log(`current id : ${currentId}`);
-
-		$('#list-root').append(item);
-
-		// TODO persist to local store
-	}
-
-	function addTempItem() {
-		// const node = document.getElementById('list-root');
-		// const element = document.createElement('li');
-		// node.appendChild(element)
-		const item = createTempItemForId(currentId);
-		currentId++;
-		console.log(`current id : ${currentId}`);
-
-		$('#list-root').append(item);
-
-		// TODO persist to local store
-	}
-
-	function deleteItem(itemId) {
-		$(`#item-${itemId}`).remove();
-		console.log(`Removed element ` + `#item-${itemId}`)
-		// TODO remove from local store
-	}
-
-	function deleteTempItem(itemId) {
-		$(`#temp-${itemId}`).remove();
-		console.log(`Removed element ` + `#temp-${itemId}`)
-		// TODO remove from local store
-	}
-
-	function createItemForId(itemId) {
-		const val = $('#item-item-text').val();
-		const el =
-			`<div class="list-child" id="item-${itemId}">
-			<div class="text">${val}</div>
-			<button onclick="deleteItem(${itemId})">X</button>
-			</div>`;
-		return $.parseHTML(el);
-	}
-
-	function createTempItemForId(itemId) {
-		const val = $('#item-item-text').val();
-		const el =
-			`<div class="list-child temp" id="temp-${itemId}">
-			<div class="text">${val}</div>
-			<button onclick="deleteTempItem(${itemId})">X</button>
-			</div>`;
-		return $.parseHTML(el);
-	}
-
-	// const onlineEvent = new CustomEvent('wasOnline',{detail:data});
-
-	function isServerOnline() {
-		// if (func === 'undefined') return;
-		$.get('/ping', function (data) {
-			// console.log('online');
-			// //TODO add online event
-			//   func('online');
-			dispatchEvent(new CustomEvent('wasOnline'))
-		}).fail(function () {
-			dispatchEvent(new CustomEvent('wasOffline'))
-		});
-	}
-
-	function refresh() {
-		isServerOnline();
-		setTimeout(refresh, 500);
-	}
-
-	refresh();
-
-	addEventListener('wasOnline', () => {
-		updateServerState('online')
-	});
-	addEventListener('wasOffline', () => {
-		updateServerState('offline')
-	});
-
-	function updateServerState(state) {
-		if (state === 'undefined') return;
-		if (state === 'online') {
-			$('#server-status').text("online!");
-		} else if (state === 'offline') {
-			$('#server-status').text("offline!");
-		}
-	}
-
-	// network methods
-	function addItem(description)
-	{
-
-	}
-
-	function deleteItem(id)
-	{
-
-	}
+<h2>List app with offline support</h2>
+<div class="input-container">
+	<label>
+		<input id="item-item-text" type="text">
+	</label>
+	<button onclick="addItem()">Add item</button>
+	<button onclick="addTempItem()">Add temp</button>
+</div>
+<h3>Items cached from server</h3>
+<div id="list-root" class="items-container offline-version"></div>
+<h3>Items pending sync to server</h3>
+<div id="temp-list-root" class="items-container temp"></div>
+<script src="js/idb.js"></script>
+<script src="js/main.js">
 </script>
 </body>
 </html>
