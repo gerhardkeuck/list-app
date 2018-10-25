@@ -196,17 +196,18 @@ let localLastModified = 0;
  * Should be called by trigger event.
  */
 const pushPendingActions = () => {
-	//TODO push pending actions to server
 	getPendingActions()
 		.then((actions) => {
+			// TODO if concurrency issue occurs again, consider clearing the whole queue.
+			// Add actions to the queue again if they fail.
 			if (actions.length === 0) return;
 			actions.forEach(keyVal => {
 				if (keyVal.val.action === 'add') {
+					idbQueue.delete(keyVal.key);
 					pushAdd(keyVal.val.item)
 						.then((resp) => resp.json())
 						.then((response) => {
 							// success, remove action
-							idbQueue.delete(keyVal.key);
 							$(`#temp-${keyVal.val.item.localId}`).remove();
 							const el = createItemForId(response.id, response.description);
 							cacheContainer.append(el);
@@ -214,6 +215,8 @@ const pushPendingActions = () => {
 						})
 						.catch(() => {
 							// failed to push acton, try next round
+							idbQueue.set(keyVal.key, keyVal.val);
+
 						});
 				} else if (keyVal.val.action === 'delete') {
 					pushDelete(keyVal.val.id)
