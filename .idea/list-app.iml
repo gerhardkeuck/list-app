@@ -15,5 +15,8 @@
     <orderEntry type="library" name="jquery-3.3.1" level="application" />
     <orderEntry type="library" name="@types/gulp" level="application" />
     <orderEntry type="library" name="@types/workbox-sw" level="application" />
+    <orderEntry type="library" name="@types/node" level="application" />
+    <orderEntry type="library" name="@types/workbox-sw" level="application" />
+    <orderEntry type="library" name="@types/gulp" level="application" />
   </component>
 </module>

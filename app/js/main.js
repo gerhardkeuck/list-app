@@ -15,16 +15,10 @@ const tempContainer = $('#temp-list-root');
 
 function addItem() {
 	const description = $('#item-input-text').val();
-	const headers = new Headers({'Content-Type': 'application/json'});
 	let itemId = getNewLocalId();
 	let item = {description: description, localId: itemId};
-	const body = JSON.stringify(item);
 
-	return fetch('add', {
-		method: 'POST',
-		headers: headers,
-		body: body
-	}).then(function (response) {
+	return pushAdd(item).then(function (response) {
 		console.log(response)
 	}).catch(function (err) {
 		console.log('Server offline. Adding pending ADD action');
@@ -34,16 +28,30 @@ function addItem() {
 	}).then(() => updateLastLocalModify());
 }
 
-function deleteItem(itemId) {
-	$(`#item-${itemId}`).remove();
-	console.log(`Removed element ` + `#item-${itemId}`)
+function pushAdd(item) {
+	const body = JSON.stringify(item);
 	const headers = new Headers({'Content-Type': 'application/json'});
-	const body = JSON.stringify({id: itemId});
+	return fetch('add', {
+		method: 'POST',
+		headers: headers,
+		body: body
+	})
+}
+
+function pushDelete(remoteId) {
+	const body = JSON.stringify({id: remoteId});
+	const headers = new Headers({'Content-Type': 'application/json'});
 	return fetch('delete', {
 		method: 'POST',
 		headers: headers,
 		body: body
-	}).catch((err) => {
+	})
+}
+
+function deleteItem(itemId) {
+	$(`#item-${itemId}`).remove();
+	console.log(`Removed element ` + `#item-${itemId}`)
+	return pushDelete(itemId).catch((err) => {
 		// network failure, add DELETE action to queue
 		console.log(err);
 		let action = {action: 'delete', id: itemId};
@@ -121,13 +129,6 @@ function loadContentNetworkFirst() {
 					// console.log(dataFromNetwork);
 					updateCacheUI(dataFromNetwork);
 					saveItemDataLocally(dataFromNetwork);
-					// .then(() => {
-					// 	setLastUpdated(new Date());
-					// 	messageDataSaved();
-					// }).catch(err => {
-					// messageSaveError();
-					// console.warn(err);
-					// });
 					haveLoadedOffline = false;
 				})
 				.catch(err => {
@@ -142,7 +143,30 @@ function loadContentNetworkFirst() {
 
 	const pushPendingActions = () => {
 		//TODO push pending actions to server
+		getPendingActions().then((actions) => {
+			if (actions.length === 0) return;
+			actions.forEach(keyVal => {
+				if (keyVal.val.action === 'add') {
+					pushAdd(keyVal.val.item).then(() => {
+						// success, remove action
+						idbQueue.delete(keyVal.key)
+					}).catch(() => {
+						// failed to push acton, try next round
+					})
+				} else if (keyVal.val.action === 'delete') {
+					pushDelete(keyVal.val.id)
+						.then(() => {
+							// success, remove action
+							idbQueue.delete(keyVal.key)
+						}).catch(() => {
+						// failed to push acton, try next round
+					})
+				} else {
+					console.log('Ignoring invalid action')
+				}
 
+			})
+		})
 	};
 
 	const loadPendingActions = () => {
