@@ -1,5 +1,3 @@
-'use strict';
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
@@ -93,7 +91,7 @@ function getDb() {
  */
 function saveDb() {
 	let dataToSave = JSON.stringify(db);
-	fs.writeFileSync('list-data.json', dataToSave);
+	fs.writeFileSync(dbLocation, dataToSave);
 }
 
 /**
@@ -114,43 +112,6 @@ function doDbReadWrite(func) {
 	saveDb();
 }
 
-// function doDbAction(req, res, func) {
-// 	let jsonFile = __dirname + '/server-data/list-data.json';
-// 	fs.readFile(jsonFile, (err, data) => {
-// 		let db = undefined;
-// 		if (err) {
-// 			// res.sendStatus(500);
-// 			// console.log(err);
-// 			// return;
-// 			db = {
-// 				lastModified: 0,
-// 				lastId: 0,
-// 				items: []
-// 			}
-// 		} else {
-// 			try {
-// 				db = JSON.parse(data);
-// 			} catch (e) {
-// 				console.log('ACCIDENTALLY DELETED EVERYTHING!');
-// 				db = {
-// 					lastModified: 0,
-// 					lastId: 0,
-// 					items: []
-// 				}
-// 			}
-// 		}
-// 		func(db);
-// 		let dbJson = JSON.stringify(db);
-//
-// 		// lazy, so always write full db, even when only did write (cause POC)
-// 		fs.writeFile(jsonFile, dbJson, err => {
-// 			if (err) {
-// 				console.log(err)
-// 			}
-// 		});
-// 	})
-// }
-
 const server = app.listen(8082, () => {
 
 	const host = server.address().address;
@@ -158,32 +119,3 @@ const server = app.listen(8082, () => {
 
 	console.log('App listening at http://%s:%s', host, port);
 });
-
-// TODO load JSON store in mem, and only write when shutting down
-
-// process.stdin.resume();
-//
-//
-// var count = 1;
-//
-// function exitHandler(options, exitCode) {
-// 	if (options.cleanup) {
-// 		console.log('clean');
-// 		console.log('SAVING JSON store for exitCode ' + exitCode);
-// 	}
-// 	if (exitCode || exitCode === 0) console.log(exitCode);
-// 	if (options.exit) process.exit();
-// }
-//
-// //do something when app is closing
-// process.on('exit', exitHandler.bind(null, {cleanup: true}));
-//
-// //catches ctrl+c event
-// process.on('SIGINT', exitHandler.bind(null, {exit: true}));
-//
-// // catches "kill pid" (for example: nodemon restart)
-// process.on('SIGUSR1', exitHandler.bind(null, {exit: true}));
-// process.on('SIGUSR2', exitHandler.bind(null, {exit: true}));
-//
-// //catches uncaught exceptions
-// process.on('uncaughtException', exitHandler.bind(null, {exit: true}));

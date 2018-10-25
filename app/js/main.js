@@ -15,17 +15,43 @@ const tempContainer = $('#temp-list-root');
 
 function addItem() {
 	const description = $('#item-input-text').val();
-	let itemId = getNewLocalId();
-	let item = {description: description, localId: itemId};
+	const localId = getNewLocalId();
+	const item = {description: description, localId: localId};
 
-	return pushAdd(item).then(function (response) {
-		console.log(response)
-	}).catch(function (err) {
-		console.log('Server offline. Adding pending ADD action');
-		let action = {action: 'add', item: item};
-		console.log(action);
-		idbQueue.set('temp' + itemId, action)
-	}).then(() => updateLastLocalModify());
+	// add to temp UI
+	const el = createTempItemForId(localId, description);
+	tempContainer.append(el);
+
+	// push to server
+	pushAdd(item)
+		.then((resp) => resp.json())
+		.then((response) => {
+			$(`#temp-${localId}`).remove();
+			const el = createItemForId(response.id, response.description);
+			cacheContainer.append(el);
+			idbCache.set(response.id, response.description);
+		})
+		.catch(() => {
+			let action = {action: 'add', item: item};
+			idbQueue.set('temp' + localId, action);
+		});
+}
+
+function deleteItem(itemId) {
+	$(`#item-${itemId}`).remove();
+	console.log(`Removed element ` + `#item-${itemId}`);
+	idbCache.delete(itemId);
+	pushDelete(itemId)
+		.catch(() => {
+			let action = {action: 'delete', id: itemId};
+			idbQueue.set('cached' + itemId, action);
+		});
+}
+
+function deleteTempItem(itemId) {
+	$(`#temp-${itemId}`).remove();
+	console.log(`Removed element ` + `#temp-${itemId}`);
+	idbQueue.delete('temp' + itemId);
 }
 
 function pushAdd(item) {
@@ -48,205 +74,214 @@ function pushDelete(remoteId) {
 	})
 }
 
-function deleteItem(itemId) {
-	$(`#item-${itemId}`).remove();
-	console.log(`Removed element ` + `#item-${itemId}`)
-	return pushDelete(itemId).catch((err) => {
-		// network failure, add DELETE action to queue
-		console.log(err);
-		let action = {action: 'delete', id: itemId};
-		idbQueue.set('cached' + itemId, action)
-	}).then(() => updateLastLocalModify());
-}
 
-function deleteTempItem(itemId) {
-	$(`#temp-${itemId}`).remove();
-	console.log(`Removed element ` + `#temp-${itemId}`)
-// delete directly as item has not been pushed to server yet
-	idbQueue.delete('temp' + itemId);
-	updateLastLocalModify();
+function refresh() {
+	queryServerOnline();
+	setTimeout(refresh, 500);
 }
-
-// const onlineEvent = new CustomEvent('wasOnline',{detail:data});
 
 /**
  * Polls the server to see if it is online.
  */
-function isServerOnline() {
-	$.get('/ping', function (data) {
+function queryServerOnline() {
+	$.get('/ping', () => {
 		dispatchEvent(new CustomEvent('wasOnline'))
 	}).fail(function () {
 		dispatchEvent(new CustomEvent('wasOffline'))
 	});
 }
 
-function refresh() {
-	isServerOnline();
-	setTimeout(refresh, 500);
-}
-
-refresh();
-
 addEventListener('wasOnline', () => {
 	updateServerState('online')
 });
+
 addEventListener('wasOffline', () => {
 	updateServerState('offline')
 });
 
+/**
+ * Update what the application knows of the server's state
+ * @param state = 'online'|'offline'
+ */
 function updateServerState(state) {
 	if (state === 'undefined') return;
 	const listRoot = $('#list-root');
-	loadContentNetworkFirst()
 	if (state === 'online') {
 		listRoot.removeClass('offline-version');
 		listRoot.addClass('online-version');
+		loadContentNetworkFirst();
+
 	} else if (state === 'offline') {
 		listRoot.addClass('offline-version');
 		listRoot.removeClass('online-version');
 	}
 }
 
+/**
+ * Only load on application startup.
+ */
+function loadOfflineContent() {
+// load cache UI
+	refreshCachedUI()
+// load temp UI
+	refreshPendingUI()
+}
+
+
 /*
  * Network functions
  */
 
+/**
+ * Populate cache UI from the Items Cache.
+ */
+function refreshCachedUI() {
+	getLocalItemData()
+		.then(offlineData => {
+			if (!offlineData.length) {
+				console.log('no messages');
+			} else {
+				console.log('cached messages');
+				updateCacheUI(offlineData);
+			}
+		});
+
+	function updateCacheUI(items) {
+		cacheContainer.empty();
+		items.forEach(item => {
+			const el = createItemForId(item.id, item.description);
+			cacheContainer.append(el);
+		});
+	}
+}
+
+/**
+ * Populate the pending ADD UI from the Pending Queue.
+ */
+function refreshPendingUI() {
+	getPendingActions()
+		.then(pendingData => {
+			if (!pendingData.length) {
+				console.log('no pending actions');
+			} else {
+				console.log('cached actions');
+				updateTempUI(pendingData);
+			}
+		});
+
+	function updateTempUI(items) {
+		tempContainer.empty();
+		items.forEach(item => {
+			if (item.val.action === 'add') {
+				const el = createTempItemForId(item.val.item.localId, item.val.item.description);
+				tempContainer.append(el);
+			} else {
+				console.log(`skipping item with action ${item.val.action}`)
+			}
+		})
+	}
+}
+
+
+/**
+ * Last modification time of server that clients knows off.
+ * @type {number}
+ */
 let serverLastModified = 0;
 let localLastModified = 0;
 
-// loadContentNetworkFirst();
-
-let haveLoadedOffline = false;
-let haveLoadedPending = false;
-
-function loadContentNetworkFirst() {
-	getServerLastModified().then(newModified => {
-		// server was online, update if it was newer
-		if (newModified > serverLastModified) {
-			serverLastModified = newModified;
-			getServerData()
-				.then(dataFromNetwork => {
-					// console.log(dataFromNetwork);
-					updateCacheUI(dataFromNetwork);
-					saveItemDataLocally(dataFromNetwork);
-					haveLoadedOffline = false;
-				})
-				.catch(err => {
-					// this will be called if server went offline between the first and second call
-					loadOfflineContent(err);
-				});
-		}
-	}).then(() => pushPendingActions()
-	).catch(err => {
-		loadOfflineContent(err);
-	}).then(() => loadPendingActions());
-
-	const pushPendingActions = () => {
-		//TODO push pending actions to server
-		getPendingActions().then((actions) => {
+/**
+ * Attempt to execute pending actions.
+ *
+ * Should be called by trigger event.
+ */
+const pushPendingActions = () => {
+	//TODO push pending actions to server
+	getPendingActions()
+		.then((actions) => {
 			if (actions.length === 0) return;
 			actions.forEach(keyVal => {
 				if (keyVal.val.action === 'add') {
-					pushAdd(keyVal.val.item).then(() => {
-						// success, remove action
-						idbQueue.delete(keyVal.key)
-					}).catch(() => {
-						// failed to push acton, try next round
-					})
+					pushAdd(keyVal.val.item)
+						.then((resp) => resp.json())
+						.then((response) => {
+							// success, remove action
+							idbQueue.delete(keyVal.key);
+							$(`#temp-${keyVal.val.item.localId}`).remove();
+							const el = createItemForId(response.id, response.description);
+							cacheContainer.append(el);
+							idbCache.set(response.id, response.description);
+						})
+						.catch(() => {
+							// failed to push acton, try next round
+						});
 				} else if (keyVal.val.action === 'delete') {
 					pushDelete(keyVal.val.id)
 						.then(() => {
 							// success, remove action
-							idbQueue.delete(keyVal.key)
-						}).catch(() => {
-						// failed to push acton, try next round
-					})
+							idbQueue.delete(keyVal.key);
+							// also remove item from local cache
+							idbCache.delete(keyVal.val.id);
+						})
+						.catch(() => {
+							// failed to push acton, try next round
+						})
 				} else {
 					console.log('Ignoring invalid action')
 				}
 
 			})
 		})
-	};
+};
 
-	const loadPendingActions = () => {
-		if (haveLoadedPending) return;
-		getPendingActions()
-			.then(pendingData => {
-				if (!pendingData.length) {
-					console.log('no pending actions');
-				} else {
-					console.log('cached actions');
-					console.log(pendingData);
-					updateTempUI(pendingData);
-					haveLoadedOffline = true;
-				}
-			})
-			.then(() => {
-				haveLoadedPending = true;
-			})
-	};
-
-	const loadOfflineContent = (err) => {
-		// console.log('Network requests have failed, this is expected if offline');
-		if (haveLoadedOffline) return;
-		getLocalItemData()
-			.then(offlineData => {
-				if (!offlineData.length) {
-					console.log('no messages');
-					// messageNoData();
-				} else {
-					console.log('cached messages');
-					console.log(offlineData);
-					// messageOffline();
-					updateCacheUI(offlineData);
-					haveLoadedOffline = true;
-				}
-			});
-	}
+function loadContentNetworkFirst() {
+	getServerLastModified()
+		.then(newModified => {
+			// server was online, update if it was newer
+			if (newModified > serverLastModified) {
+				serverLastModified = newModified;
+				getServerData()
+					.then(dataFromNetwork => {
+						// console.log(dataFromNetwork);
+						saveItemDataLocally(dataFromNetwork);
+					})
+					.catch(err => {
+						// this will be called if server went offline between the first and second call
+						loadOfflineContent(err);
+					})
+					.then(() => refreshCachedUI());
+			}
+		})
+		.then(() => {
+			if (localLastModified < getLastLocalModify()) {
+				pushPendingActions();
+			}
+		})
+		.catch(err => {
+			loadOfflineContent(err);
+		});
 }
 
 function getServerLastModified() {
-	return fetch('lastModified').then(response => {
-		if (!response.ok) {
-			throw Error(response.statusText);
-		}
-		return response.json();
-	});
+	return fetch('lastModified')
+		.then(response => {
+			if (!response.ok) {
+				throw Error(response.statusText);
+			}
+			return response.json();
+		});
 }
 
 function getServerData() {
-	return fetch('getAll').then(response => {
-		if (!response.ok) {
-			throw Error(response.statusText);
-		}
-		return response.json();
-	});
+	return fetch('getAll')
+		.then(response => {
+			if (!response.ok) {
+				throw Error(response.statusText);
+			}
+			return response.json();
+		});
 }
 
-function updateCacheUI(items) {
-	cacheContainer.empty();
-	items.forEach(item => {
-		const el = createItemForId(item.id, item.description);
-		cacheContainer.append(el);
-	});
-}
-
-/**
- * Populate the pending list from the pending actions.
- * @param items
- */
-function updateTempUI(items) {
-	tempContainer.empty();
-	items.forEach(item => {
-		if (item.val.action === 'add') {
-			const el = createTempItemForId(item.val.item.localId, item.val.item.description);
-			tempContainer.append(el);
-		} else {
-			console.log(`skipping item with action ${item.val.action}`)
-		}
-	})
-}
 
 /**
  * Updates local cache of list from server
@@ -287,7 +322,7 @@ const dbPromise = idb.open('listapp-store', 1, upgradeDB => {
 	upgradeDB.createObjectStore('pendingqueue');
 });
 
-const idbCache = {
+var idbCache = {
 	get(key) {
 		return dbPromise.then(db => {
 			return db.transaction('itemcache')
@@ -334,7 +369,7 @@ const idbCache = {
 	}
 };
 
-const idbQueue = {
+var idbQueue = {
 	get(key) {
 		return dbPromise.then(db => {
 			return db.transaction('pendingqueue')
@@ -342,6 +377,7 @@ const idbQueue = {
 		});
 	},
 	set(key, val) {
+		updateLocalLastModified();
 		return dbPromise.then(db => {
 			const tx = db.transaction('pendingqueue', 'readwrite');
 			tx.objectStore('pendingqueue').put(val, key);
@@ -349,6 +385,7 @@ const idbQueue = {
 		});
 	},
 	delete(key) {
+		updateLocalLastModified();
 		return dbPromise.then(db => {
 			const tx = db.transaction('pendingqueue', 'readwrite');
 			tx.objectStore('pendingqueue').delete(key);
@@ -356,6 +393,7 @@ const idbQueue = {
 		});
 	},
 	clear() {
+		updateLocalLastModified();
 		return dbPromise.then(db => {
 			const tx = db.transaction('pendingqueue', 'readwrite');
 			tx.objectStore('pendingqueue').clear();
@@ -395,15 +433,14 @@ function getNewLocalId() {
 function getLastLocalModify() {
 	let time = localStorage.getItem('localLastModified');
 	if (time === null) {
-		time = -1;
-		localStorage.setItem('localLastModified', time);
+		time = 1;
+		localStorage.setItem('localLastModified', 1);
 	}
 	return time;
 }
 
-function updateLastLocalModify() {
+function updateLocalLastModified() {
 	localStorage.setItem('localLastModified', new Date().getTime());
-	haveLoadedPending = false;
 }
 
 function getLocalItemData() {
@@ -423,3 +460,9 @@ function getPendingActions() {
 // 	}
 // 	localStorage.setItem('currentLocalId', _id);
 // }
+
+// loadContentNetworkFirst();
+
+loadOfflineContent();
+
+refresh();
