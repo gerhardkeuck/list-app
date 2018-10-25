@@ -10,39 +10,45 @@ if ('serviceWorker' in navigator) {
 	});
 }
 
-
-var currentId = 5;
+const cacheContainer = $('#list-root');
+const tempContainer = $('#temp-list-root');
 
 function addItem() {
-	// const node = document.getElementById('list-root');
-	// const element = document.createElement('li');
-	// node.appendChild(element)
-	const item = createItemForId(currentId);
-	currentId++;
-	console.log(`current id : ${currentId}`);
-
-	$('#list-root').append(item);
+	const description = $('#item-input-text').val();
 
 	// TODO persist to local store
-}
 
-function addTempItem() {
-	// const node = document.getElementById('list-root');
-	// const element = document.createElement('li');
-	// node.appendChild(element)
-	const item = createTempItemForId(currentId);
-	currentId++;
-	console.log(`current id : ${currentId}`);
+	const headers = new Headers({'Content-Type': 'application/json'});
+	let itemId = getNewLocalId();
+	const body = JSON.stringify({description: description, localId: itemId});
 
-	$('#temp-list-root').append(item);
-
-	// TODO persist to local store
+	return fetch('add', {
+		method: 'POST',
+		headers: headers,
+		body: body
+	}).then(function (response) {
+		console.log(response)
+	}).catch(function (err) {
+		console.log('failed here');
+		tempContainer.append(createTempItemForId(itemId, description));
+		console.log(err);
+		idbQueue.set(itemId, {action: 'add', description: description})
+	});
 }
 
 function deleteItem(itemId) {
 	$(`#item-${itemId}`).remove();
 	console.log(`Removed element ` + `#item-${itemId}`)
 	// TODO remove from local store
+	const headers = new Headers({'Content-Type': 'application/json'});
+	const body = JSON.stringify({id: itemId});
+	return fetch('delete', {
+		method: 'POST',
+		headers: headers,
+		body: body
+	}).then().catch((err) => {
+
+	});
 }
 
 function deleteTempItem(itemId) {
@@ -51,22 +57,20 @@ function deleteTempItem(itemId) {
 	// TODO remove from local store
 }
 
-function createItemForId(itemId) {
-	const val = $('#item-item-text').val();
+function createItemForId(id, description) {
 	const el =
-		`<div class="list-child" id="item-${itemId}">
-			<div class="text">${val}</div>
-			<button class="delete-button" onclick="deleteItem(${itemId})">X</button>
+		`<div class="list-child" id="item-${id}">
+			<div class="text">${description}</div>
+			<button class="delete-button" onclick="deleteItem(${id})">X</button>
 			</div>`;
 	return $.parseHTML(el);
 }
 
-function createTempItemForId(itemId) {
-	const val = $('#item-item-text').val();
+function createTempItemForId(localId, description) {
 	const el =
-		`<div class="list-child temp" id="temp-${itemId}">
-			<div class="item-text">${val}</div>
-			<button class="delete-button" onclick="deleteTempItem(${itemId})">X</button>
+		`<div class="list-child temp" id="temp-${localId}">
+			<div class="item-text">${description}</div>
+			<button class="delete-button" onclick="deleteTempItem(${localId})">X</button>
 			</div>`;
 	return $.parseHTML(el);
 }
@@ -102,6 +106,7 @@ addEventListener('wasOffline', () => {
 function updateServerState(state) {
 	if (state === 'undefined') return;
 	const listRoot = $('#list-root');
+	loadContentNetworkFirst()
 	if (state === 'online') {
 		listRoot.removeClass('offline-version');
 		listRoot.addClass('online-version');
@@ -111,9 +116,98 @@ function updateServerState(state) {
 	}
 }
 
+function checkListUpdate() {
+
+}
+
 /*
  * Network functions
  */
+
+let serverLastModified = 0;
+let localLastModified = 0;
+
+// loadContentNetworkFirst();
+
+let haveLoadedOffline = false;
+
+function loadContentNetworkFirst() {
+
+	getServerLastModified().then(newModified => {
+		// server was online, update if it was newer
+		if (newModified > serverLastModified) {
+			serverLastModified = newModified;
+			getServerData()
+				.then(dataFromNetwork => {
+					// console.log(dataFromNetwork);
+					updateUI(dataFromNetwork);
+					saveItemDataLocally(dataFromNetwork)
+					// .then(() => {
+					// 	setLastUpdated(new Date());
+					// 	messageDataSaved();
+					// }).catch(err => {
+					// messageSaveError();
+					// console.warn(err);
+					// });
+					haveLoadedOffline = false;
+				})
+				.catch(err => {
+					// this will be called if server went offline between the first and second call
+					loadOfflineContent(err);
+				});
+		}
+	}).catch(err => {
+		loadOfflineContent(err);
+	});
+
+	const loadOfflineContent = (err) =>{
+		// console.log('Network requests have failed, this is expected if offline');
+		if (haveLoadedOffline) return;
+		getLocalItemData()
+			.then(offlineData => {
+				if (!offlineData.length) {
+					console.log('no messages');
+					// messageNoData();
+				} else {
+					console.log('cached messages');
+					console.log(offlineData);
+					// messageOffline();
+					updateUI(offlineData);
+					haveLoadedOffline = true;
+				}
+			});
+	}
+}
+
+function getServerLastModified() {
+	return fetch('lastModified').then(response => {
+		if (!response.ok) {
+			throw Error(response.statusText);
+		}
+		return response.json();
+	});
+}
+
+function getServerData() {
+	return fetch('getAll').then(response => {
+		if (!response.ok) {
+			throw Error(response.statusText);
+		}
+		return response.json();
+	});
+}
+
+function updateUI(items) {
+	cacheContainer.empty();
+	items.forEach(item => {
+		const el = createItemForId(item.id, item.description);
+		console.log(`current id : ${item.id}`);
+
+		cacheContainer.append(el);
+	});
+}
+
+
 // function addItem(description)
 // {
 // /*
@@ -143,27 +237,156 @@ function updateServerState(state) {
 /**
  * Updates local cache of list from server
  */
-function updateList() {
-	/*
-	 *
-	 *
- 	 */
-
+function saveItemDataLocally(items) {
+	idbCache.clear();
+	items.forEach(item => idbCache.set(item.id, item.description))
 }
 
 /*
- * Local storage function
+ * UI functions
  */
 
-const db = createIndexedDB();
+/*
+ * Local storage functions
+ */
 
-function createIndexedDB() {
-	if (!('indexedDB' in window)) {
-		return null;
+const dbPromise = idb.open('listapp-store', 1, upgradeDB => {
+	upgradeDB.createObjectStore('itemcache');
+	upgradeDB.createObjectStore('pendingqueue');
+});
+
+const idbCache = {
+	get(key) {
+		return dbPromise.then(db => {
+			return db.transaction('itemcache')
+				.objectStore('itemcache').get(key);
+		});
+	},
+	set(key, val) {
+		return dbPromise.then(db => {
+			const tx = db.transaction('itemcache', 'readwrite');
+			tx.objectStore('itemcache').put(val, key);
+			return tx.complete;
+		});
+	},
+	delete(key) {
+		return dbPromise.then(db => {
+			const tx = db.transaction('itemcache', 'readwrite');
+			tx.objectStore('itemcache').delete(key);
+			return tx.complete;
+		});
+	},
+	clear() {
+		return dbPromise.then(db => {
+			const tx = db.transaction('itemcache', 'readwrite');
+			tx.objectStore('itemcache').clear();
+			return tx.complete;
+		});
+	},
+	keys() {
+		return dbPromise.then(db => {
+			const tx = db.transaction('itemcache');
+			const keys = [];
+			const store = tx.objectStore('itemcache');
+
+			// This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
+			// openKeyCursor isn't supported by Safari, so we fall back
+			(store.iterateKeyCursor || store.iterateCursor).call(store, cursor => {
+				if (!cursor) return;
+				keys.push(cursor.key);
+				cursor.continue();
+			});
+
+			return tx.complete.then(() => keys);
+		});
+	},
+	keyVals() {
+		return dbPromise.then(db => {
+			const tx = db.transaction('itemcache');
+			const keyVals = [];
+			const store = tx.objectStore('itemcache');
+
+			// This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
+			// openKeyCursor isn't supported by Safari, so we fall back
+			(store.iterateKeyCursor || store.iterateCursor).call(store, cursor => {
+				if (!cursor) return;
+				keyVals.push({id: cursor.key, description: cursor.value});
+				cursor.continue();
+			});
+
+			return tx.complete.then(() => keyVals);
+		});
 	}
-	return idb.open('listdb', 1, function (upgradeDb) {
-		if (!upgradeDb.objectStoreNames.contains('cacheditems')) {
-			const itemsOS = upgradeDb.createObjectStore('cacheditems', {keyPath: 'id'});
-		}
-	});
+};
+
+const idbQueue = {
+	get(key) {
+		return dbPromise.then(db => {
+			return db.transaction('pendingqueue')
+				.objectStore('pendingqueue').get(key);
+		});
+	},
+	set(key, val) {
+		return dbPromise.then(db => {
+			const tx = db.transaction('pendingqueue', 'readwrite');
+			tx.objectStore('pendingqueue').put(val, key);
+			return tx.complete;
+		});
+	},
+	delete(key) {
+		return dbPromise.then(db => {
+			const tx = db.transaction('pendingqueue', 'readwrite');
+			tx.objectStore('pendingqueue').delete(key);
+			return tx.complete;
+		});
+	},
+	clear() {
+		return dbPromise.then(db => {
+			const tx = db.transaction('pendingqueue', 'readwrite');
+			tx.objectStore('pendingqueue').clear();
+			return tx.complete;
+		});
+	},
+	keys() {
+		return dbPromise.then(db => {
+			const tx = db.transaction('pendingqueue');
+			const keys = [];
+			const store = tx.objectStore('pendingqueue');
+
+			// This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
+			// openKeyCursor isn't supported by Safari, so we fall back
+			(store.iterateKeyCursor || store.iterateCursor).call(store, cursor => {
+				if (!cursor) return;
+				keys.push(cursor.key);
+				cursor.continue();
+			});
+
+			return tx.complete.then(() => keys);
+		});
+	}
+};
+
+function getNewLocalId() {
+	let _id = localStorage.getItem('currentLocalId');
+	if (_id === null) {
+		_id = 1;
+		localStorage.setItem('currentLocalId', _id);
+	} else {
+		localStorage.setItem('currentLocalId', parseInt(_id) + 1);
+	}
+	return _id;
 }
+
+function getLocalItemData() {
+	return idbCache.keyVals();
+}
+
+// function incrementLocalId() {
+// 	let _id = localStorage.getItem('currentLocalId');
+// 	if (_id === null) {
+// 		_id = 1;
+// 	} else {
+// 		_id++;
+// 	}
+// 	localStorage.setItem('currentLocalId', _id);
+// }

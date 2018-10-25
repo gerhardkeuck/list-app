@@ -6,8 +6,10 @@ const app = express();
 // This serves static files from the specified directory
 app.use(express.static(__dirname + '/build'));
 
+app.use(bodyParser.urlencoded(
+	{extended: true}
+));
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: true}));
 
 app.get(['/', '/index.html'], (req, res) => {
 	res.sendFile(__dirname + '/index.html');
@@ -26,13 +28,16 @@ app.get('/lastModified', (req, res) => {
 });
 
 app.post('/add', (req, res) => {
+	if (Object.keys(req.body).length === 0) {
+		res.sendStatus(400)
+	}
 	let itemData = req.body;
-	// console.log(req)
+	console.log(itemData);
 	doDbAction(req, res, (db) => {
 		let id = db.lastId + 1;
 		db.lastId = id;
 		db.lastModified = new Date().getTime();
-		let newItem = {id: id, description: itemData.description};
+		let newItem = {id: id, description: itemData.description, localId: itemData.localId};
 		console.log(`Adding item: ${JSON.stringify(newItem)}`);
 		db.items.push(newItem);
 		res.setHeader('Content-Type', 'application/json');
@@ -42,6 +47,7 @@ app.post('/add', (req, res) => {
 
 app.post('/delete', (req, res) => {
 	let itemData = req.body;
+	console.log(itemData);
 	doDbAction(req, res, (db) => {
 		let targetId = itemData.id;
 		console.log(`Removing item: ${JSON.stringify(targetId)}`);
@@ -60,7 +66,7 @@ app.post('/delete', (req, res) => {
 
 app.get('/getAll', (req, res) => {
 	doDbAction(req, res, (db) => {
-		console.log(db);
+		// console.log(db);
 		res.setHeader('Content-Type', 'application/json');
 		res.send(JSON.stringify(db.items));
 	})
@@ -81,7 +87,16 @@ function doDbAction(req, res, func) {
 				items: []
 			}
 		} else {
-			db = JSON.parse(data);
+			try {
+				db = JSON.parse(data);
+			} catch (e) {
+				console.log('ACCIDENTALLY DELETED EVERYTHING!');
+				db = {
+					lastModified: 0,
+					lastId: 0,
+					items: []
+				}
+			}
 		}
 		func(db);
 		let dbJson = JSON.stringify(db);

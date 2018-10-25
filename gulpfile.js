@@ -18,8 +18,7 @@ const serviceWorker = () => {
 		swDest: 'build/sw.js',
 		globDirectory: 'build',
 		globPatterns: [
-			'index.html',
-			'main.js'
+			'**/*'
 		]
 	}).then(resources => {
 		console.log(`Injected ${resources.count} resources for precaching, ` +
