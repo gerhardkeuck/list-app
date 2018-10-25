@@ -15,12 +15,10 @@ const tempContainer = $('#temp-list-root');
 
 function addItem() {
 	const description = $('#item-input-text').val();
-
-	// TODO persist to local store
-
 	const headers = new Headers({'Content-Type': 'application/json'});
 	let itemId = getNewLocalId();
-	const body = JSON.stringify({description: description, localId: itemId});
+	let item = {description: description, localId: itemId};
+	const body = JSON.stringify(item);
 
 	return fetch('add', {
 		method: 'POST',
@@ -29,60 +27,45 @@ function addItem() {
 	}).then(function (response) {
 		console.log(response)
 	}).catch(function (err) {
-		console.log('failed here');
-		tempContainer.append(createTempItemForId(itemId, description));
-		console.log(err);
-		idbQueue.set(itemId, {action: 'add', description: description})
-	});
+		console.log('Server offline. Adding pending ADD action');
+		let action = {action: 'add', item: item};
+		console.log(action);
+		idbQueue.set('temp' + itemId, action)
+	}).then(() => updateLastLocalModify());
 }
 
 function deleteItem(itemId) {
 	$(`#item-${itemId}`).remove();
 	console.log(`Removed element ` + `#item-${itemId}`)
-	// TODO remove from local store
 	const headers = new Headers({'Content-Type': 'application/json'});
 	const body = JSON.stringify({id: itemId});
 	return fetch('delete', {
 		method: 'POST',
 		headers: headers,
 		body: body
-	}).then().catch((err) => {
-
-	});
+	}).catch((err) => {
+		// network failure, add DELETE action to queue
+		console.log(err);
+		let action = {action: 'delete', id: itemId};
+		idbQueue.set('cached' + itemId, action)
+	}).then(() => updateLastLocalModify());
 }
 
 function deleteTempItem(itemId) {
 	$(`#temp-${itemId}`).remove();
 	console.log(`Removed element ` + `#temp-${itemId}`)
-	// TODO remove from local store
-}
-
-function createItemForId(id, description) {
-	const el =
-		`<div class="list-child" id="item-${id}">
-			<div class="text">${description}</div>
-			<button class="delete-button" onclick="deleteItem(${id})">X</button>
-			</div>`;
-	return $.parseHTML(el);
-}
-
-function createTempItemForId(localId, description) {
-	const el =
-		`<div class="list-child temp" id="temp-${localId}">
-			<div class="item-text">${description}</div>
-			<button class="delete-button" onclick="deleteTempItem(${localId})">X</button>
-			</div>`;
-	return $.parseHTML(el);
+// delete directly as item has not been pushed to server yet
+	idbQueue.delete('temp' + itemId);
+	updateLastLocalModify();
 }
 
 // const onlineEvent = new CustomEvent('wasOnline',{detail:data});
 
+/**
+ * Polls the server to see if it is online.
+ */
 function isServerOnline() {
-	// if (func === 'undefined') return;
 	$.get('/ping', function (data) {
-		// console.log('online');
-		// //TODO add online event
-		//   func('online');
 		dispatchEvent(new CustomEvent('wasOnline'))
 	}).fail(function () {
 		dispatchEvent(new CustomEvent('wasOffline'))
@@ -126,9 +109,9 @@ let localLastModified = 0;
 // loadContentNetworkFirst();
 
 let haveLoadedOffline = false;
+let haveLoadedPending = false;
 
 function loadContentNetworkFirst() {
-
 	getServerLastModified().then(newModified => {
 		// server was online, update if it was newer
 		if (newModified > serverLastModified) {
@@ -136,7 +119,7 @@ function loadContentNetworkFirst() {
 			getServerData()
 				.then(dataFromNetwork => {
 					// console.log(dataFromNetwork);
-					updateUI(dataFromNetwork);
+					updateCacheUI(dataFromNetwork);
 					saveItemDataLocally(dataFromNetwork);
 					// .then(() => {
 					// 	setLastUpdated(new Date());
@@ -152,11 +135,35 @@ function loadContentNetworkFirst() {
 					loadOfflineContent(err);
 				});
 		}
-	}).catch(err => {
+	}).then(() => pushPendingActions()
+	).catch(err => {
 		loadOfflineContent(err);
-	});
+	}).then(() => loadPendingActions());
 
-	const loadOfflineContent = (err) =>{
+	const pushPendingActions = () => {
+		//TODO push pending actions to server
+
+	};
+
+	const loadPendingActions = () => {
+		if (haveLoadedPending) return;
+		getPendingActions()
+			.then(pendingData => {
+				if (!pendingData.length) {
+					console.log('no pending actions');
+				} else {
+					console.log('cached actions');
+					console.log(pendingData);
+					updateTempUI(pendingData);
+					haveLoadedOffline = true;
+				}
+			})
+			.then(() => {
+				haveLoadedPending = true;
+			})
+	};
+
+	const loadOfflineContent = (err) => {
 		// console.log('Network requests have failed, this is expected if offline');
 		if (haveLoadedOffline) return;
 		getLocalItemData()
@@ -168,7 +175,7 @@ function loadContentNetworkFirst() {
 					console.log('cached messages');
 					console.log(offlineData);
 					// messageOffline();
-					updateUI(offlineData);
+					updateCacheUI(offlineData);
 					haveLoadedOffline = true;
 				}
 			});
@@ -193,42 +200,29 @@ function getServerData() {
 	});
 }
 
-function updateUI(items) {
+function updateCacheUI(items) {
 	cacheContainer.empty();
 	items.forEach(item => {
 		const el = createItemForId(item.id, item.description);
-		console.log(`current id : ${item.id}`);
-
 		cacheContainer.append(el);
 	});
 }
 
-
-// function addItem(description)
-// {
-// /*
-// * TODO
-// * Push ADD
-// * On success:
-// * 	add to item cache
-// *	else
-// *		add ADD Action item to pending queue
-// * */
-// }
-
-// function deleteItem(id)
-// {
-// /*
-// * TODO
-// * Remove item from item cache
-// * Push DELETE
-// * On Success
-// * 	do nothing
-// * Else
-// * 	add DELETE Action item to pending queue
-// * */
-// }
-
+/**
+ * Populate the pending list from the pending actions.
+ * @param items
+ */
+function updateTempUI(items) {
+	tempContainer.empty();
+	items.forEach(item => {
+		if (item.val.action === 'add') {
+			const el = createTempItemForId(item.val.item.localId, item.val.item.description);
+			tempContainer.append(el);
+		} else {
+			console.log(`skipping item with action ${item.val.action}`)
+		}
+	})
+}
 
 /**
  * Updates local cache of list from server
@@ -241,6 +235,24 @@ function saveItemDataLocally(items) {
 /*
  * UI functions
  */
+
+function createItemForId(id, description) {
+	const el =
+		`<div class="list-child" id="item-${id}">
+			<div class="text">${description}</div>
+			<button class="delete-button" onclick="deleteItem(${id})">X</button>
+			</div>`;
+	return $.parseHTML(el);
+}
+
+function createTempItemForId(localId, description) {
+	const el =
+		`<div class="list-child temp" id="temp-${localId}">
+			<div class="item-text">${description}</div>
+			<button class="delete-button" onclick="deleteTempItem(${localId})">X</button>
+			</div>`;
+	return $.parseHTML(el);
+}
 
 /*
  * Local storage functions
@@ -277,23 +289,6 @@ const idbCache = {
 			const tx = db.transaction('itemcache', 'readwrite');
 			tx.objectStore('itemcache').clear();
 			return tx.complete;
-		});
-	},
-	keys() {
-		return dbPromise.then(db => {
-			const tx = db.transaction('itemcache');
-			const keys = [];
-			const store = tx.objectStore('itemcache');
-
-			// This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
-			// openKeyCursor isn't supported by Safari, so we fall back
-			(store.iterateKeyCursor || store.iterateCursor).call(store, cursor => {
-				if (!cursor) return;
-				keys.push(cursor.key);
-				cursor.continue();
-			});
-
-			return tx.complete.then(() => keys);
 		});
 	},
 	keyVals() {
@@ -343,21 +338,21 @@ const idbQueue = {
 			return tx.complete;
 		});
 	},
-	keys() {
+	keyVals() {
 		return dbPromise.then(db => {
 			const tx = db.transaction('pendingqueue');
-			const keys = [];
+			const keyVals = [];
 			const store = tx.objectStore('pendingqueue');
 
 			// This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
 			// openKeyCursor isn't supported by Safari, so we fall back
-			(store.iterateKeyCursor || store.iterateCursor).call(store, cursor => {
+			(store.iterateCursor).call(store, cursor => {
 				if (!cursor) return;
-				keys.push(cursor.key);
+				keyVals.push({key: cursor.key, val: cursor.value});
 				cursor.continue();
 			});
 
-			return tx.complete.then(() => keys);
+			return tx.complete.then(() => keyVals);
 		});
 	}
 };
@@ -373,8 +368,26 @@ function getNewLocalId() {
 	return _id;
 }
 
+function getLastLocalModify() {
+	let time = localStorage.getItem('localLastModified');
+	if (time === null) {
+		time = -1;
+		localStorage.setItem('localLastModified', time);
+	}
+	return time;
+}
+
+function updateLastLocalModify() {
+	localStorage.setItem('localLastModified', new Date().getTime());
+	haveLoadedPending = false;
+}
+
 function getLocalItemData() {
 	return idbCache.keyVals();
+}
+
+function getPendingActions() {
+	return idbQueue.keyVals();
 }
 
 // function incrementLocalId() {
