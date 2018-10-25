@@ -116,10 +116,6 @@ function updateServerState(state) {
 	}
 }
 
-function checkListUpdate() {
-
-}
-
 /*
  * Network functions
  */
@@ -141,7 +137,7 @@ function loadContentNetworkFirst() {
 				.then(dataFromNetwork => {
 					// console.log(dataFromNetwork);
 					updateUI(dataFromNetwork);
-					saveItemDataLocally(dataFromNetwork)
+					saveItemDataLocally(dataFromNetwork);
 					// .then(() => {
 					// 	setLastUpdated(new Date());
 					// 	messageDataSaved();
@@ -308,7 +304,7 @@ const idbCache = {
 
 			// This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
 			// openKeyCursor isn't supported by Safari, so we fall back
-			(store.iterateKeyCursor || store.iterateCursor).call(store, cursor => {
+			(store.iterateCursor).call(store, cursor => {
 				if (!cursor) return;
 				keyVals.push({id: cursor.key, description: cursor.value});
 				cursor.continue();
