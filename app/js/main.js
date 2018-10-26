@@ -138,12 +138,12 @@ function loadOfflineContent() {
 function refreshCachedUI() {
 	getLocalItemData()
 		.then(offlineData => {
-			if (!offlineData.length) {
-				console.log('no messages');
-			} else {
-				console.log('cached messages');
+			// if (!offlineData.length) {
+			// 	console.log('no messages');
+			// } else {
+			// 	console.log('cached messages');
 				updateCacheUI(offlineData);
-			}
+			// }
 		});
 
 	function updateCacheUI(items) {
@@ -198,16 +198,17 @@ let localLastModified = 0;
 const pushPendingActions = () => {
 	getPendingActions()
 		.then((actions) => {
-			// TODO if concurrency issue occurs again, consider clearing the whole queue.
+			idbQueue.clear();
+			// TODO if concurrency issue occurs again, consider 	clearing the whole queue.
 			// Add actions to the queue again if they fail.
 			if (actions.length === 0) return;
 			actions.forEach(keyVal => {
 				if (keyVal.val.action === 'add') {
-					idbQueue.delete(keyVal.key);
 					pushAdd(keyVal.val.item)
 						.then((resp) => resp.json())
 						.then((response) => {
 							// success, remove action
+							// idbQueue.delete(keyVal.key);
 							$(`#temp-${keyVal.val.item.localId}`).remove();
 							const el = createItemForId(response.id, response.description);
 							cacheContainer.append(el);
@@ -228,6 +229,7 @@ const pushPendingActions = () => {
 						})
 						.catch(() => {
 							// failed to push acton, try next round
+							idbQueue.set(keyVal.key, keyVal.val);
 						})
 				} else {
 					console.log('Ignoring invalid action')
@@ -245,8 +247,9 @@ function loadContentNetworkFirst() {
 				serverLastModified = newModified;
 				getServerData()
 					.then(dataFromNetwork => {
-						// console.log(dataFromNetwork);
+						console.log(dataFromNetwork);
 						saveItemDataLocally(dataFromNetwork);
+						refreshCachedUI();
 					})
 					.catch(err => {
 						// this will be called if server went offline between the first and second call
